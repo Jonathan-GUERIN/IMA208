@@ -25,9 +25,34 @@ def iou_batch(bb_test, bb_gt):
     IoU: np.array(nb test boxes, nb gt boxes), the IoU between all test and gt boxes
     """
     
-    xxxx
-    
-    IoU = xxxx                                              
+    nb_test_boxes = bb_test.shape[0]
+    nb_gt_boxes = bb_gt.shape[0]
+    IoU = np.zeros((nb_test_boxes, nb_gt_boxes))
+    for i in range(nb_test_boxes):
+        for j in range(nb_gt_boxes):
+            x1 = bb_test[i,0]
+            x2 = bb_test[i,2]
+            y1 = bb_test[i,1]
+            y2 = bb_test[i,3]
+            x3 = bb_gt[i,0]
+            x4 = bb_gt[i,2]
+            y3 = bb_gt[i,1]
+            y4 = bb_gt[i,3]
+            if x3 <= x2 and y3 <= y2 and x4 >= x1 and y4 >=y1:
+                if x3 >= x1:
+                    if y3 >= y1:
+                        num = (x2-x3)*(y2-y3)
+                    elif y3 < y1:
+                        num = (x2-x3)*(y2-y1)
+                elif x3 < x1:
+                    if y3 >= y1:
+                        num = (x2-x1)*(y2-y3)
+                    elif y3 < y1:
+                        num = (x2-x1)*(y2-y1)
+                den = (x2-x1)*(y2-y1)+(x4-x3)*(y4-y3)
+                IoU[i,j] = num/den
+            else:
+                IoU[i,j] = 0
     return IoU  
 
 
@@ -37,25 +62,36 @@ def convert_bbox_to_z(bbox):
     [x,y,s,r] where x,y is the centre of the box and s is the area and r is
     the aspect ratio
     """
+    x1 = bbox[0]
+    y1 = bbox[1]
+    x2 = bbox[2]
+    y2 = bbox[3]
 
-    x = xxxx
-    y = xxxx
-    s = xxxx
-    r = xxxx
+    x = int((x1+x2)/2)
+    y = int((y1+y2)/2)
+    s = int( (x2-x1)*(y2-y1))
+    r = int((x2-x1)/(y2-y1))
     
     return np.array([x, y, s, r]).reshape((4, 1))
 
 
-def convert_x_to_bbox(x, score=None):
+def convert_x_to_bbox(bbox, score=None):
     """
     Takes a bounding box x in the centre form [x,y,s,r] and returns it in the form
     [x1,y1,x2,y2] where x1,y1 is the top left and x2,y2 is the bottom right
     """
+    x = bbox[0]
+    y = bbox[1]
+    s = bbox[2]
+    r = bbox[3]
     
-    x1 = xxxx
-    y1 = xxxx
-    x2 = xxxx
-    y2 = xxxx
+    w = np.sqrt(r*s)
+    l = np.sqrt(r/s)
+    
+    x1 = int(x-w//2)
+    y1 = int(y-l//2)
+    x2 = int(x+w//2)
+    y2 = int(y+w//2)
     
     if(score==None):
         return np.array([x1, y1, x2, y2]).reshape((1,4))
@@ -77,13 +113,20 @@ class KalmanBoxTracker(object):
         """
 
         # define a constant velocity model
-        self.kf = xxxx 
+        x = bbox[0]
+        y = bbox[1]
+        s = bbox[2]
+        r = bbox[3]
+        dim_x = 7
+        dim_z = 7
+        self.kf = KalmanFilter(dim_x, dim_z)
             # Initialize a KalmanFilter with the correct dimension for the state and measurement
             
         # Initialize the state transition matrix and measurement matrix assuming a constant velocity model
         # with only location variables measured
-        self.kf.F = xxxx
-        self.kf.H = xxxx
+        
+        self.kf.F = np.eye(dim_x, dim_x) 
+        self.kf.H = np.eye(dim_z, dim_x) 
 
         self.kf.P[4:,4:] *= 1000. # give high uncertainty to the unobservable initial velocities
         self.kf.P *= 10.
@@ -91,7 +134,7 @@ class KalmanBoxTracker(object):
         self.kf.Q[4:,4:] *= 0.01
         self.kf.R[2:,2:] *= 10.
 
-        self.kf.x = xxxx
+        self.kf.x = [[x,y,s,r,1,1,1]] 
         
         self.time_since_update = 0
         self.id = KalmanBoxTracker.count
@@ -106,12 +149,22 @@ class KalmanBoxTracker(object):
         Updates the state vector with observed bbox.
             bbox is in the [x1,y1,x2,y2] format
         """
+        
+        x = bbox[0]
+        y = bbox[1]
+        s = bbox[2]
+        r = bbox[3]
+        
         self.time_since_update = 0
         self.history = []
         self.hits += 1
         self.hit_streak += 1
         
-        xxxx # write the call to the Kalman filter update
+        z = bbox
+        R = self.kf.R
+        H = self.kf.H
+        
+        self.kf.update(z, R, H) # write the call to the Kalman filter update
 
     def predict(self):
         """
@@ -120,7 +173,10 @@ class KalmanBoxTracker(object):
         if((self.kf.x[6]+self.kf.x[2])<=0):
             self.kf.x[6] *= 0.0
             
-        xxxx # write the call to the Kalman filter predict
+        F = self.kf.F
+        Q = self.kf.Q
+            
+        self.predict(F,Q) # write the call to the Kalman filter predict
         
         self.age += 1
         if(self.time_since_update>0):
