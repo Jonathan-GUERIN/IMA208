@@ -34,10 +34,10 @@ def iou_batch(bb_test, bb_gt):
             x2 = bb_test[i,2]
             y1 = bb_test[i,1]
             y2 = bb_test[i,3]
-            x3 = bb_gt[i,0]
-            x4 = bb_gt[i,2]
-            y3 = bb_gt[i,1]
-            y4 = bb_gt[i,3]
+            x3 = bb_gt[j,0]
+            x4 = bb_gt[j,2]
+            y3 = bb_gt[j,1]
+            y4 = bb_gt[j,3]
             if x3 <= x2 and y3 <= y2 and x4 >= x1 and y4 >=y1:
                 if x3 >= x1:
                     if y3 >= y1:
@@ -67,10 +67,10 @@ def convert_bbox_to_z(bbox):
     x2 = bbox[2]
     y2 = bbox[3]
 
-    x = int((x1+x2)/2)
-    y = int((y1+y2)/2)
-    s = int( (x2-x1)*(y2-y1))
-    r = int((x2-x1)/(y2-y1))
+    x = (x1+x2)/2
+    y = (y1+y2)/2
+    s = (x2-x1)*(y2-y1)
+    r = (x2-x1)/(y2-y1)
     
     return np.array([x, y, s, r]).reshape((4, 1))
 
@@ -80,18 +80,19 @@ def convert_x_to_bbox(bbox, score=None):
     Takes a bounding box x in the centre form [x,y,s,r] and returns it in the form
     [x1,y1,x2,y2] where x1,y1 is the top left and x2,y2 is the bottom right
     """
-    x = bbox[0]
-    y = bbox[1]
-    s = bbox[2]
-    r = bbox[3]
+    print(bbox[0])
+    x_c = bbox[0]
+    y_c = bbox[1]
+    s_c = bbox[2]
+    r_c = bbox[3]
     
-    w = np.sqrt(r*s)
-    l = np.sqrt(r/s)
+    w = np.sqrt(r_c*s_c)
+    l = np.sqrt(s_c/r_c)
     
-    x1 = int(x-w//2)
-    y1 = int(y-l//2)
-    x2 = int(x+w//2)
-    y2 = int(y+w//2)
+    x1 = x_c-w/2
+    y1 = y_c-l/2
+    x2 = x_c+w/2
+    y2 = y_c+l/2
     
     if(score==None):
         return np.array([x1, y1, x2, y2]).reshape((1,4))
@@ -113,12 +114,12 @@ class KalmanBoxTracker(object):
         """
 
         # define a constant velocity model
-        x = bbox[0]
-        y = bbox[1]
-        s = bbox[2]
-        r = bbox[3]
+        x1 = bbox[0]
+        y1 = bbox[1]
+        x2 = bbox[2]
+        y2 = bbox[3]
         dim_x = 7
-        dim_z = 7
+        dim_z = 4
         self.kf = KalmanFilter(dim_x, dim_z)
             # Initialize a KalmanFilter with the correct dimension for the state and measurement
             
@@ -133,8 +134,9 @@ class KalmanBoxTracker(object):
         self.kf.Q[-1,-1] *= 0.01
         self.kf.Q[4:,4:] *= 0.01
         self.kf.R[2:,2:] *= 10.
-
-        self.kf.x = [[x,y,s,r,1,1,1]] 
+        
+        self.kf.x = np.ones((dim_x,1))
+        self.kf.x[:4] = convert_bbox_to_z(bbox)
         
         self.time_since_update = 0
         self.id = KalmanBoxTracker.count
@@ -150,21 +152,21 @@ class KalmanBoxTracker(object):
             bbox is in the [x1,y1,x2,y2] format
         """
         
-        x = bbox[0]
-        y = bbox[1]
-        s = bbox[2]
-        r = bbox[3]
+        x1 = bbox[0]
+        y1 = bbox[1]
+        x2 = bbox[2]
+        y2 = bbox[3]
         
         self.time_since_update = 0
         self.history = []
         self.hits += 1
         self.hit_streak += 1
         
-        z = bbox
+        z = convert_bbox_to_z(bbox)
         R = self.kf.R
         H = self.kf.H
         
-        self.kf.update(z, R, H) # write the call to the Kalman filter update
+        self.kf.update(z) # write the call to the Kalman filter update
 
     def predict(self):
         """
@@ -176,7 +178,7 @@ class KalmanBoxTracker(object):
         F = self.kf.F
         Q = self.kf.Q
             
-        self.predict(F,Q) # write the call to the Kalman filter predict
+        self.kf.predict() # write the call to the Kalman filter predict
         
         self.age += 1
         if(self.time_since_update>0):

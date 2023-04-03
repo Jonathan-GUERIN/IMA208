@@ -67,7 +67,7 @@ class KalmanFilter(object):
         self.dim_z = dim_z
         
         # Initialize with zeros or identity when possible
-        self.x = np.zeros(dim_x)        # state (mean)
+        self.x = np.zeros((dim_x,1))        # state (mean)
         self.P = np.eye(dim_x)        # uncertainty covariance
         self.Q = np.eye(dim_x, dim_x)        # process uncertainty
         self.F = np.eye(dim_x, dim_x)        # state transition matrix
